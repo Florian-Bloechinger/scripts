@@ -1,4 +1,4 @@
 #!/bin/sh
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-exec /usr/bin/env bash "$SCRIPT_DIR/../health/system_health.sh" "$@"
+exec /usr/bin/env bash "$SCRIPT_DIR/../health/system_health_dashboard.sh" "$@"
