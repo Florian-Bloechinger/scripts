@@ -1,5 +1,10 @@
 #!/bin/bash
 
+# Re-exec under bash when launched through a shell that ignores the shebang.
+if [ -z "${BASH_VERSION-}" ]; then
+    exec /usr/bin/env bash "$0" "$@"
+fi
+
 # --- Konfiguration ---
 BAR_WIDTH="${BAR_WIDTH:-30}"
 DELIMITER="╺━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╸"
