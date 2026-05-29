@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Ensure the script runs under bash (not /bin/sh which may be dash)
+if [ -z "${BASH_VERSION-}" ]; then
+    exec /usr/bin/env bash "$0" "$@"
+fi
+
 set -u
 
 # list_network_interfaces.sh - improved
