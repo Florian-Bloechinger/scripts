@@ -1,4 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec /usr/bin/env bash "$0" "$@"
+fi
 
 # --- Color definitions for the fancy look ---
 NC='\033[0m'
@@ -31,6 +35,47 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+MAX_PROMPT_ATTEMPTS=3
+
+prompt_required() {
+    local var_name=$1
+    local label=$2
+    local is_secret=${3:-false}
+    local attempts=0
+    local value=""
+
+    while [ -z "$value" ] && [ "$attempts" -lt "$MAX_PROMPT_ATTEMPTS" ]; do
+        if [ "$is_secret" = true ]; then
+            echo -e "${BLUE}[?] Please enter $label (input will be hidden):${NC}"
+            printf '➔ '
+            if ! read -rs value; then
+                echo ""
+                echo -e "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
+                return 1
+            fi
+            echo ""
+        else
+            echo -e "${BLUE}[?] Please enter $label:${NC}"
+            if ! read -rp "➔ " value; then
+                echo -e "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
+                return 1
+            fi
+        fi
+
+        if [ -z "$value" ]; then
+            echo -e "${RED}    $label must not be empty!${NC}"
+            attempts=$((attempts + 1))
+        fi
+    done
+
+    if [ -z "$value" ]; then
+        echo -e "${RED}[✕] Too many attempts. Aborting.${NC}"
+        return 1
+    fi
+
+    printf -v "$var_name" '%s' "$value"
+}
+
 # Helper: install and configure the service (original flow)
 install_and_configure() {
     PANGOLIN_PATH=$(which pangolin)
@@ -50,24 +95,15 @@ install_and_configure() {
     echo ""
     echo -e "${WHITE}--- Enter configuration ---${NC}"
 
-    # ID
-    while [ -z "$P_ID" ]; do
-        echo -e "${BLUE}[?] Please enter Pangolin ID:${NC}"
-        read -p "➔ " P_ID
-        if [ -z "$P_ID" ]; then
-            echo -e "${RED}    ID must not be empty!${NC}"
-        fi
-    done
+    P_ID="${PANGOLIN_ID:-}"
+    if [ -z "$P_ID" ]; then
+        prompt_required P_ID "Pangolin ID" || return 1
+    fi
 
-    # Secret
-    while [ -z "$P_SECRET" ]; do
-        echo -e "${BLUE}[?] Please enter Pangolin Secret (input will be hidden):${NC}"
-        read -s -p "➔ " P_SECRET
-        echo ""
-        if [ -z "$P_SECRET" ]; then
-            echo -e "${RED}    Secret must not be empty!${NC}"
-        fi
-    done
+    P_SECRET="${PANGOLIN_SECRET:-}"
+    if [ -z "$P_SECRET" ]; then
+        prompt_required P_SECRET "Pangolin Secret" true || return 1
+    fi
 
     # Endpoint
     DEFAULT_ENDPOINT="https://aegis.hivegamez.com"
