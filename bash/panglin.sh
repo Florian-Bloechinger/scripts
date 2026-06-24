@@ -6,13 +6,12 @@ for _bash in /bin/bash /usr/bin/bash /usr/local/bin/bash bash; do
 #!/usr/bin/env bash
 set -u
 
-PANGOLIN_MANAGER_VERSION="2.1.0"
+PANGOLIN_MANAGER_VERSION="2.1.1"
 REFRESH_INTERVAL="${REFRESH_INTERVAL:-2}"
 DEFAULT_ENDPOINT="https://aegis.hivegamez.com"
 SELECTED_IDX=0
 STATUS_MSG=""
 MESSAGE_TTL=0
-USE_ALT_SCREEN=0
 
 declare -a SVC_NAMES=()
 declare -a SVC_ACTIVE=()
@@ -41,23 +40,11 @@ init_colors() {
 }
 
 enter_fullscreen() {
-    if [ "${TERM:-}" = "dumb" ]; then
-        USE_ALT_SCREEN=0
-        clear
-        return
-    fi
-    if tput smcup 2>/dev/null; then
-        USE_ALT_SCREEN=1
-        return
-    fi
-    USE_ALT_SCREEN=0
     clear
 }
 
 leave_fullscreen() {
-    if [ "$USE_ALT_SCREEN" -eq 1 ]; then
-        tput rmcup 2>/dev/null || true
-    fi
+    :
 }
 
 set_status() {
@@ -484,7 +471,6 @@ handle_key() {
 
 cleanup() {
     tput cnorm 2>/dev/null || true
-    leave_fullscreen
     stty sane 2>/dev/null || true
     printf '\n'
 }
@@ -513,9 +499,11 @@ main() {
         exit 0
     fi
 
+    printf '\nPangolin Manager v%s — press q to quit\n' "$PANGOLIN_MANAGER_VERSION" >&2
+    sleep 0.3
+
     trap cleanup EXIT INT TERM
     enter_fullscreen
-    tput civis 2>/dev/null || true
 
     while true; do
         discover_services
