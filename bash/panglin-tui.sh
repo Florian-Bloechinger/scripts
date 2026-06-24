@@ -1,5 +1,5 @@
 #!/bin/sh
-# POSIX launcher for XPipe / dash — delegates to bash TUI.
+# Wrapper: XPipe and `sh panglin-tui.sh` must not parse bash syntax directly.
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 TUI_SCRIPT="$SCRIPT_DIR/panglin-tui.bash"
 
@@ -14,5 +14,5 @@ for bash_bin in /bin/bash /usr/bin/bash /usr/local/bin/bash bash; do
     fi
 done
 
-printf 'Error: bash is required for Pangolin Manager.\n' >&2
+printf 'Error: bash is required. Run: sh %s/panglin.sh\n' "$SCRIPT_DIR" >&2
 exit 1
