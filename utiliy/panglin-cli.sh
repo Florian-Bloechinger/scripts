@@ -2,14 +2,21 @@
 
 # XPipe may invoke scripts with sh/dash — re-exec with bash before any bash-only syntax.
 if [ -z "${BASH_VERSION:-}" ]; then
+    _script=$(CDPATH= cd -- "$(dirname "$0")" && pwd)/$(basename "$0")
     for _bash in /bin/bash /usr/bin/bash /usr/local/bin/bash bash; do
         if command -v "$_bash" >/dev/null 2>&1 && "$_bash" -c 'exit 0' 2>/dev/null; then
-            exec "$_bash" "$0" "$@"
+            exec "$_bash" "$_script" "$@"
         fi
     done
-    echo "Error: This script requires bash." >&2
+    printf 'Error: This script requires bash.\n' >&2
     exit 1
 fi
+
+PANGOLIN_MANAGER_VERSION="2.3.0"
+NEWT_BIN="/usr/local/bin/newt"
+NEWT_ENV_FILE="/etc/newt/newt.env"
+NEWT_SERVICE="newt"
+DEFAULT_ENDPOINT="https://aegis.hivegamez.com"
 
 # --- Color definitions for the fancy look ---
 NC='\033[0m'
@@ -21,20 +28,25 @@ PURPLE='\033[1;35m'
 CYAN='\033[1;36m'
 WHITE='\033[1;37m'
 
+say() {
+    printf '%b\n' "$1"
+}
+
 # --- Banner ---
 clear
-echo -e "${PURPLE}==================================================${NC}"
-echo -e "${CYAN}    ██████╗  █████╗ ███╗   ██╗ ██████╗  ██╗     ██╗███╗   ██╗${NC}"
-echo -e "${CYAN}    ██╔══██╗██╔══██╗████╗  ██║██╔════╝  ██║     ██║████╗  ██║${NC}"
-echo -e "${CYAN}    ██████╔╝███████║██╔██╗ ██║██║  ███╗ ██║     ██║██╔██╗ ██║${NC}"
-echo -e "${CYAN}    ██╔═══╝ ██╔══██║██║╚██╗██║██║   ██║ ██║     ██║██║╚██╗██║${NC}"
-echo -e "${CYAN}    ██║     ██║  ██║██║ ╚████║╚██████╔╝ ███████╗██║██║ ╚████║${NC}"
-echo -e "${CYAN}    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚══════╝╚═╝╚═╝  ╚═══╝${NC}"
-echo -e "${PURPLE}==================================================${NC}"
-echo -e "${WHITE}          Pangolin Service Manager & Installer     ${NC}"
-echo -e "${PURPLE}==================================================${NC}"
+say "${PURPLE}==================================================${NC}"
+say "${CYAN}    ██████╗  █████╗ ███╗   ██╗ ██████╗  ██╗     ██╗███╗   ██╗${NC}"
+say "${CYAN}    ██╔══██╗██╔══██╗████╗  ██║██╔════╝  ██║     ██║████╗  ██║${NC}"
+say "${CYAN}    ██████╔╝███████║██╔██╗ ██║██║  ███╗ ██║     ██║██╔██╗ ██║${NC}"
+say "${CYAN}    ██╔═══╝ ██╔══██║██║╚██╗██║██║   ██║ ██║     ██║██║╚██╗██║${NC}"
+say "${CYAN}    ██║     ██║  ██║██║ ╚████║╚██████╔╝ ███████╗██║██║ ╚████║${NC}"
+say "${CYAN}    ╚═╝     ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚══════╝╚═╝╚═╝  ╚═══╝${NC}"
+say "${PURPLE}==================================================${NC}"
+say "${WHITE}          Newt Service Manager & Installer            ${NC}"
+say "${CYAN}                         v${PANGOLIN_MANAGER_VERSION}${NC}"
+say "${PURPLE}==================================================${NC}"
 echo ""
-echo -e "${PURPLE}==================================================${NC}"
+say "${PURPLE}==================================================${NC}"
 
 _interactive_tty() {
     if [ -r /dev/tty ] 2>/dev/null && [ -w /dev/tty ] 2>/dev/null; then
@@ -98,7 +110,7 @@ read_hidden() {
 
 # --- Ensure root privileges for actions that require it ---
 if [ "$(id -u)" -ne 0 ]; then
-    echo -e "${RED}[✕] Error: Please run this script with sudo or as root!${NC}"
+    say "${RED}[✕] Error: Please run this script with sudo or as root!${NC}"
     exit 1
 fi
 
@@ -113,114 +125,138 @@ prompt_required() {
 
     while [ -z "$value" ] && [ "$attempts" -lt "$MAX_PROMPT_ATTEMPTS" ]; do
         if [ "$is_secret" = true ]; then
-            echo -e "${BLUE}[?] Please enter $label (input will be hidden):${NC}"
+            say "${BLUE}[?] Please enter $label (input will be hidden):${NC}"
             if ! read_hidden value; then
-                echo -e "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
+                say "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
                 return 1
             fi
         else
-            echo -e "${BLUE}[?] Please enter $label:${NC}"
+            say "${BLUE}[?] Please enter $label:${NC}"
             if ! read_prompt value "➔ "; then
-                echo -e "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
+                say "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
                 return 1
             fi
         fi
 
         if [ -z "$value" ]; then
-            echo -e "${RED}    $label must not be empty!${NC}"
+            say "${RED}    $label must not be empty!${NC}"
             attempts=$((attempts + 1))
         fi
     done
 
     if [ -z "$value" ]; then
-        echo -e "${RED}[✕] Too many attempts. Aborting.${NC}"
+        say "${RED}[✕] Too many attempts. Aborting.${NC}"
         return 1
     fi
 
     printf -v "$var_name" '%s' "$value"
 }
 
-# Helper: install and configure the service (original flow)
+# Helper: install and configure the Newt service
 install_and_configure() {
-    PANGOLIN_PATH=$(command -v pangolin)
-    if [ -z "$PANGOLIN_PATH" ]; then
-        echo -e "${YELLOW}[*] Pangolin CLI not found. Installing...${NC}"
-        curl -fsSL https://static.pangolin.net/get-cli.sh | bash
-        PANGOLIN_PATH=$(command -v pangolin)
-        if [ -z "$PANGOLIN_PATH" ]; then
-            echo -e "${RED}[✕] Error installing Pangolin. Aborting.${NC}"
+    NEWT_PATH=$(command -v newt 2>/dev/null || true)
+    if [ -z "$NEWT_PATH" ] && [ -x "$NEWT_BIN" ]; then
+        NEWT_PATH="$NEWT_BIN"
+    fi
+
+    if [ -z "$NEWT_PATH" ]; then
+        say "${YELLOW}[*] Newt not found. Installing...${NC}"
+        if ! curl -fsSL https://static.pangolin.net/get-newt.sh | bash; then
+            say "${RED}[✕] Error installing Newt. Aborting.${NC}"
             return 1
         fi
-        echo -e "${GREEN}[✓] Pangolin installed successfully!${NC}"
+        NEWT_PATH=$(command -v newt 2>/dev/null || true)
+        if [ -z "$NEWT_PATH" ] && [ -x "$NEWT_BIN" ]; then
+            NEWT_PATH="$NEWT_BIN"
+        fi
+        if [ -z "$NEWT_PATH" ]; then
+            say "${RED}[✕] Newt installed but binary not found. Aborting.${NC}"
+            return 1
+        fi
+        say "${GREEN}[✓] Newt installed successfully!${NC}"
     else
-        echo -e "${GREEN}[✓] Pangolin CLI found at: $PANGOLIN_PATH${NC}"
+        say "${GREEN}[✓] Newt found at: $NEWT_PATH${NC}"
     fi
 
     echo ""
-    echo -e "${WHITE}--- Enter configuration ---${NC}"
+    say "${WHITE}--- Enter configuration ---${NC}"
 
-    P_ID="${PANGOLIN_ID:-}"
-    if [ -z "$P_ID" ]; then
-        prompt_required P_ID "Pangolin ID" || return 1
+    NEWT_ID="${NEWT_ID:-${PANGOLIN_ID:-}}"
+    if [ -z "$NEWT_ID" ]; then
+        prompt_required NEWT_ID "Newt ID" || return 1
     fi
 
-    P_SECRET="${PANGOLIN_SECRET:-}"
-    if [ -z "$P_SECRET" ]; then
-        prompt_required P_SECRET "Pangolin Secret" true || return 1
+    NEWT_SECRET="${NEWT_SECRET:-${PANGOLIN_SECRET:-}}"
+    if [ -z "$NEWT_SECRET" ]; then
+        prompt_required NEWT_SECRET "Newt Secret" true || return 1
     fi
 
-    # Endpoint
-    DEFAULT_ENDPOINT="https://aegis.hivegamez.com"
-    echo -e "${BLUE}[?] Enter endpoint [Default: $DEFAULT_ENDPOINT]:${NC}"
-    read_prompt P_ENDPOINT "➔ "
-    if [ -z "$P_ENDPOINT" ]; then
-        P_ENDPOINT=$DEFAULT_ENDPOINT
+    PANGOLIN_ENDPOINT="${PANGOLIN_ENDPOINT:-}"
+    if [ -z "$PANGOLIN_ENDPOINT" ]; then
+        say "${BLUE}[?] Enter endpoint [Default: $DEFAULT_ENDPOINT]:${NC}"
+        read_prompt PANGOLIN_ENDPOINT "➔ "
+        if [ -z "$PANGOLIN_ENDPOINT" ]; then
+            PANGOLIN_ENDPOINT=$DEFAULT_ENDPOINT
+        fi
     fi
 
     echo ""
-    echo -e "${YELLOW}[*] Creating/updating systemd service...${NC}"
+    say "${YELLOW}[*] Creating environment file...${NC}"
+    install -d -m 0755 /etc/newt
+    printf 'NEWT_ID=%s\nNEWT_SECRET=%s\nPANGOLIN_ENDPOINT=%s\n' \
+        "$NEWT_ID" "$NEWT_SECRET" "$PANGOLIN_ENDPOINT" > "$NEWT_ENV_FILE"
+    chmod 600 "$NEWT_ENV_FILE"
 
-    cat <<EOF > /etc/systemd/system/pangolin.service
+    echo ""
+    say "${YELLOW}[*] Creating/updating systemd service...${NC}"
+
+    cat <<EOF > "/etc/systemd/system/${NEWT_SERVICE}.service"
 [Unit]
-Description=Pangolin Network Service
-After=network-online.target
+Description=Newt
 Wants=network-online.target
+After=network-online.target
 
 [Service]
 Type=simple
 User=root
-ExecStart=$PANGOLIN_PATH up --id $P_ID --secret $P_SECRET --endpoint $P_ENDPOINT --attach
+Group=root
+EnvironmentFile=$NEWT_ENV_FILE
+ExecStart=$NEWT_PATH
 Restart=always
-RestartSec=10
+RestartSec=2
+UMask=0077
+
+NoNewPrivileges=true
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
     systemctl daemon-reload
-    systemctl enable --now pangolin
+    systemctl enable --now "$NEWT_SERVICE"
 
-    echo -e "${GREEN}[✓] Service configured and started successfully!${NC}"
+    say "${GREEN}[✓] Service configured and started successfully!${NC}"
     echo ""
     show_status_brief
 }
 
 # Helper: show brief status
 show_status_brief() {
-    echo -e "${PURPLE}==================================================${NC}"
-    echo -e "${WHITE}               Current Service Status             ${NC}"
-    echo -e "${PURPLE}==================================================${NC}"
-    systemctl status pangolin --no-pager | grep -E "Active:|Main PID:|Tasks:" || true
+    say "${PURPLE}==================================================${NC}"
+    say "${WHITE}               Current Service Status             ${NC}"
+    say "${PURPLE}==================================================${NC}"
+    systemctl status "$NEWT_SERVICE" --no-pager | grep -E "Active:|Main PID:|Tasks:" || true
     echo ""
-    echo -e "${CYAN}Tip: You can check the status anytime with 'systemctl status pangolin'.${NC}"
-    echo -e "${PURPLE}==================================================${NC}"
+    say "${CYAN}Tip: You can check the status anytime with 'systemctl status $NEWT_SERVICE'.${NC}"
+    say "${PURPLE}==================================================${NC}"
 }
 
 # Manage submenu
 manage_menu() {
     while true; do
         echo ""
-        echo -e "${WHITE}--- Manage Pangolin Service ---${NC}"
+        say "${WHITE}--- Manage Newt Service ---${NC}"
         echo "1) Status"
         echo "2) Start"
         echo "3) Stop"
@@ -232,19 +268,19 @@ manage_menu() {
         read_prompt MCHOICE "Select an action ➔ "
         case "$MCHOICE" in
             1)
-                systemctl status pangolin --no-pager || echo "Service not found or failed" ;;
+                systemctl status "$NEWT_SERVICE" --no-pager || echo "Service not found or failed" ;;
             2)
-                systemctl start pangolin && echo "Started" || echo "Failed to start" ;;
+                systemctl start "$NEWT_SERVICE" && echo "Started" || echo "Failed to start" ;;
             3)
-                systemctl stop pangolin && echo "Stopped" || echo "Failed to stop" ;;
+                systemctl stop "$NEWT_SERVICE" && echo "Stopped" || echo "Failed to stop" ;;
             4)
-                systemctl restart pangolin && echo "Restarted" || echo "Failed to restart" ;;
+                systemctl restart "$NEWT_SERVICE" && echo "Restarted" || echo "Failed to restart" ;;
             5)
-                journalctl -u pangolin -n 100 --no-pager || echo "No logs available" ;;
+                journalctl -u "$NEWT_SERVICE" -n 100 --no-pager || echo "No logs available" ;;
             6)
-                systemctl enable pangolin && echo "Enabled" || echo "Failed to enable" ;;
+                systemctl enable "$NEWT_SERVICE" && echo "Enabled" || echo "Failed to enable" ;;
             7)
-                systemctl disable pangolin && echo "Disabled" || echo "Failed to disable" ;;
+                systemctl disable "$NEWT_SERVICE" && echo "Disabled" || echo "Failed to disable" ;;
             8)
                 break ;;
             *)
@@ -256,7 +292,7 @@ manage_menu() {
 # Main menu
 while true; do
     echo ""
-    echo -e "${WHITE}Select an option:${NC}"
+    say "${WHITE}Select an option:${NC}"
     echo "1) Install / Configure service"
     echo "2) Manage service"
     echo "3) Exit"

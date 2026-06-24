@@ -1,10 +1,11 @@
 #!/bin/sh
-# XPipe entry point — POSIX only; delegates to bash CLI in utiliy/.
+# XPipe entry point — POSIX only; always re-exec under bash.
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
 CLI_SCRIPT="$SCRIPT_DIR/../utiliy/panglin-cli.sh"
 
 if [ ! -f "$CLI_SCRIPT" ]; then
     printf 'Error: missing %s\n' "$CLI_SCRIPT" >&2
+    printf 'Hint: sync the full scripts repo (bash/ and utiliy/) in XPipe.\n' >&2
     exit 1
 fi
 
