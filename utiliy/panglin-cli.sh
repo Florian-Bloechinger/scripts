@@ -1,10 +1,12 @@
 #!/bin/bash
 
-# XPipe and other runners may invoke this script with sh/dash; re-exec with bash.
+# XPipe may invoke scripts with sh/dash — re-exec with bash before any bash-only syntax.
 if [ -z "${BASH_VERSION:-}" ]; then
-    if command -v bash >/dev/null 2>&1; then
-        exec bash "$0" "$@"
-    fi
+    for _bash in /bin/bash /usr/bin/bash /usr/local/bin/bash bash; do
+        if command -v "$_bash" >/dev/null 2>&1 && "$_bash" -c 'exit 0' 2>/dev/null; then
+            exec "$_bash" "$0" "$@"
+        fi
+    done
     echo "Error: This script requires bash." >&2
     exit 1
 fi
@@ -52,18 +54,18 @@ read_hidden() {
 }
 
 # --- Ensure root privileges for actions that require it ---
-if [ "$EUID" -ne 0 ]; then
+if [ "$(id -u)" -ne 0 ]; then
     echo -e "${RED}[✕] Error: Please run this script with sudo or as root!${NC}"
     exit 1
 fi
 
 # Helper: install and configure the service (original flow)
 install_and_configure() {
-    PANGOLIN_PATH=$(which pangolin)
+    PANGOLIN_PATH=$(command -v pangolin)
     if [ -z "$PANGOLIN_PATH" ]; then
         echo -e "${YELLOW}[*] Pangolin CLI not found. Installing...${NC}"
         curl -fsSL https://static.pangolin.net/get-cli.sh | bash
-        PANGOLIN_PATH=$(which pangolin)
+        PANGOLIN_PATH=$(command -v pangolin)
         if [ -z "$PANGOLIN_PATH" ]; then
             echo -e "${RED}[✕] Error installing Pangolin. Aborting.${NC}"
             return 1
@@ -86,7 +88,14 @@ install_and_configure() {
     done
 
     # Secret
+    SECRET_TRIES=0
     while [ -z "$P_SECRET" ]; do
+        SECRET_TRIES=$((SECRET_TRIES + 1))
+        if [ "$SECRET_TRIES" -gt 5 ]; then
+            echo -e "${RED}[✕] Too many invalid attempts. Aborting.${NC}"
+            return 1
+        fi
+
         echo -e "${BLUE}[?] Please enter Pangolin Secret (input will be hidden):${NC}"
         read_hidden P_SECRET
         if [ -z "$P_SECRET" ]; then
