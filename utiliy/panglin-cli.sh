@@ -1,5 +1,14 @@
 #!/bin/bash
 
+# XPipe and other runners may invoke this script with sh/dash; re-exec with bash.
+if [ -z "${BASH_VERSION:-}" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    fi
+    echo "Error: This script requires bash." >&2
+    exit 1
+fi
+
 # --- Color definitions for the fancy look ---
 NC='\033[0m'
 RED='\033[1;31m'
@@ -24,6 +33,23 @@ echo -e "${WHITE}          Pangolin Service Manager & Installer     ${NC}"
 echo -e "${PURPLE}==================================================${NC}"
 echo ""
 echo -e "${PURPLE}==================================================${NC}"
+
+read_hidden() {
+    local __var_name="$1"
+    local __value=""
+
+    printf "➔ "
+    if [ -t 0 ]; then
+        stty -echo 2>/dev/null || true
+        IFS= read -r __value || __value=""
+        stty echo 2>/dev/null || true
+        printf "\n"
+    else
+        IFS= read -r __value || __value=""
+    fi
+
+    printf -v "$__var_name" '%s' "$__value"
+}
 
 # --- Ensure root privileges for actions that require it ---
 if [ "$EUID" -ne 0 ]; then
@@ -62,8 +88,7 @@ install_and_configure() {
     # Secret
     while [ -z "$P_SECRET" ]; do
         echo -e "${BLUE}[?] Please enter Pangolin Secret (input will be hidden):${NC}"
-        read -s -p "➔ " P_SECRET
-        echo ""
+        read_hidden P_SECRET
         if [ -z "$P_SECRET" ]; then
             echo -e "${RED}    Secret must not be empty!${NC}"
         fi
