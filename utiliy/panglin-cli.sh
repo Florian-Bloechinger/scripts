@@ -36,18 +36,61 @@ echo -e "${PURPLE}==================================================${NC}"
 echo ""
 echo -e "${PURPLE}==================================================${NC}"
 
+_interactive_tty() {
+    if [ -r /dev/tty ] 2>/dev/null && [ -w /dev/tty ] 2>/dev/null; then
+        echo /dev/tty
+    fi
+}
+
+read_prompt() {
+    local __var_name="$1"
+    local __prompt="${2:-➔ }"
+    local __value=""
+    local __tty
+    __tty=$(_interactive_tty)
+
+    if [ -n "$__tty" ]; then
+        printf '%s' "$__prompt" >"$__tty"
+        if ! IFS= read -r __value <"$__tty"; then
+            return 1
+        fi
+    elif [ -t 0 ]; then
+        if ! IFS= read -r -p "$__prompt" __value; then
+            return 1
+        fi
+    elif ! IFS= read -r __value; then
+        return 1
+    fi
+
+    printf -v "$__var_name" '%s' "$__value"
+}
+
 read_hidden() {
     local __var_name="$1"
     local __value=""
+    local __tty
+    __tty=$(_interactive_tty)
 
-    printf "➔ "
-    if [ -t 0 ]; then
+    if [ -n "$__tty" ]; then
+        printf '➔ ' >"$__tty"
+        stty -echo <"$__tty" 2>/dev/null || true
+        if ! IFS= read -r __value <"$__tty"; then
+            stty echo <"$__tty" 2>/dev/null || true
+            return 1
+        fi
+        stty echo <"$__tty" 2>/dev/null || true
+        printf '\n' >"$__tty"
+    elif [ -t 0 ]; then
+        printf '➔ '
         stty -echo 2>/dev/null || true
-        IFS= read -r __value || __value=""
+        if ! IFS= read -r __value; then
+            stty echo 2>/dev/null || true
+            return 1
+        fi
         stty echo 2>/dev/null || true
-        printf "\n"
-    else
-        IFS= read -r __value || __value=""
+        printf '\n'
+    elif ! IFS= read -r __value; then
+        return 1
     fi
 
     printf -v "$__var_name" '%s' "$__value"
@@ -71,10 +114,13 @@ prompt_required() {
     while [ -z "$value" ] && [ "$attempts" -lt "$MAX_PROMPT_ATTEMPTS" ]; do
         if [ "$is_secret" = true ]; then
             echo -e "${BLUE}[?] Please enter $label (input will be hidden):${NC}"
-            read_hidden value
+            if ! read_hidden value; then
+                echo -e "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
+                return 1
+            fi
         else
             echo -e "${BLUE}[?] Please enter $label:${NC}"
-            if ! read -rp "➔ " value; then
+            if ! read_prompt value "➔ "; then
                 echo -e "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
                 return 1
             fi
@@ -126,7 +172,7 @@ install_and_configure() {
     # Endpoint
     DEFAULT_ENDPOINT="https://aegis.hivegamez.com"
     echo -e "${BLUE}[?] Enter endpoint [Default: $DEFAULT_ENDPOINT]:${NC}"
-    read -p "➔ " P_ENDPOINT
+    read_prompt P_ENDPOINT "➔ "
     if [ -z "$P_ENDPOINT" ]; then
         P_ENDPOINT=$DEFAULT_ENDPOINT
     fi
@@ -183,7 +229,7 @@ manage_menu() {
         echo "6) Enable (start at boot)"
         echo "7) Disable"
         echo "8) Back"
-        read -p "Select an action ➔ " MCHOICE
+        read_prompt MCHOICE "Select an action ➔ "
         case "$MCHOICE" in
             1)
                 systemctl status pangolin --no-pager || echo "Service not found or failed" ;;
@@ -214,7 +260,7 @@ while true; do
     echo "1) Install / Configure service"
     echo "2) Manage service"
     echo "3) Exit"
-    read -p "➔ " CHOICE
+    read_prompt CHOICE "➔ "
     case "$CHOICE" in
         1)
             install_and_configure ;;
