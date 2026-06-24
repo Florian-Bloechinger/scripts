@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 
+# XPipe may invoke scripts with sh/dash — re-exec with bash before any bash-only syntax.
 if [ -z "${BASH_VERSION:-}" ]; then
-    exec /usr/bin/env bash "$0" "$@"
+    for _bash in /bin/bash /usr/bin/bash /usr/local/bin/bash bash; do
+        if command -v "$_bash" >/dev/null 2>&1 && "$_bash" -c 'exit 0' 2>/dev/null; then
+            exec "$_bash" "$0" "$@"
+        fi
+    done
+    echo "Error: This script requires bash." >&2
+    exit 1
 fi
 
 # --- Color definitions for the fancy look ---
@@ -29,8 +36,25 @@ echo -e "${PURPLE}==================================================${NC}"
 echo ""
 echo -e "${PURPLE}==================================================${NC}"
 
+read_hidden() {
+    local __var_name="$1"
+    local __value=""
+
+    printf "➔ "
+    if [ -t 0 ]; then
+        stty -echo 2>/dev/null || true
+        IFS= read -r __value || __value=""
+        stty echo 2>/dev/null || true
+        printf "\n"
+    else
+        IFS= read -r __value || __value=""
+    fi
+
+    printf -v "$__var_name" '%s' "$__value"
+}
+
 # --- Ensure root privileges for actions that require it ---
-if [ "$EUID" -ne 0 ]; then
+if [ "$(id -u)" -ne 0 ]; then
     echo -e "${RED}[✕] Error: Please run this script with sudo or as root!${NC}"
     exit 1
 fi
@@ -47,13 +71,7 @@ prompt_required() {
     while [ -z "$value" ] && [ "$attempts" -lt "$MAX_PROMPT_ATTEMPTS" ]; do
         if [ "$is_secret" = true ]; then
             echo -e "${BLUE}[?] Please enter $label (input will be hidden):${NC}"
-            printf '➔ '
-            if ! read -rs value; then
-                echo ""
-                echo -e "${RED}[✕] Input failed. Is the terminal interactive?${NC}"
-                return 1
-            fi
-            echo ""
+            read_hidden value
         else
             echo -e "${BLUE}[?] Please enter $label:${NC}"
             if ! read -rp "➔ " value; then
@@ -78,11 +96,11 @@ prompt_required() {
 
 # Helper: install and configure the service (original flow)
 install_and_configure() {
-    PANGOLIN_PATH=$(which pangolin)
+    PANGOLIN_PATH=$(command -v pangolin)
     if [ -z "$PANGOLIN_PATH" ]; then
         echo -e "${YELLOW}[*] Pangolin CLI not found. Installing...${NC}"
         curl -fsSL https://static.pangolin.net/get-cli.sh | bash
-        PANGOLIN_PATH=$(which pangolin)
+        PANGOLIN_PATH=$(command -v pangolin)
         if [ -z "$PANGOLIN_PATH" ]; then
             echo -e "${RED}[✕] Error installing Pangolin. Aborting.${NC}"
             return 1
